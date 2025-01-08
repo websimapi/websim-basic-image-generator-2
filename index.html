@@ -1,0 +1,299 @@
+<html><head><base href=""><title>Basic Image Generator</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    color: white;
+    font-family: Arial, sans-serif;
+    padding: 2rem;
+  }
+
+  .container {
+    max-width: 800px;
+    width: 100%;
+    text-align: center;
+  }
+
+  h1 {
+    margin-bottom: 2rem;
+    font-size: 2.5rem;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+  }
+
+  .input-group {
+    margin-bottom: 2rem;
+  }
+
+  input {
+    width: 70%;
+    padding: 1rem;
+    font-size: 1rem;
+    border: none;
+    border-radius: 5px;
+    margin-right: 1rem;
+    background: rgba(255,255,255,0.1);
+    color: white;
+  }
+
+  button {
+    padding: 1rem 2rem;
+    font-size: 1rem;
+    background: #4CAF50;
+    border: none;
+    border-radius: 5px;
+    color: white;
+    cursor: pointer;
+    transition: transform 0.2s;
+    margin: 0.5rem;
+  }
+
+  button:hover {
+    transform: scale(1.05);
+  }
+
+  .image-container {
+    margin-top: 2rem;
+    padding: 1rem;
+    background: rgba(255,255,255,0.1);
+    border-radius: 10px;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .loading {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #4CAF50;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .placeholder-text {
+    color: rgba(255,255,255,0.6);
+    font-size: 1.2rem;
+  }
+
+  .magic-controls {
+    margin: 1rem 0;
+    padding: 1rem;
+    background: rgba(255,255,255,0.1);
+    border-radius: 5px;
+  }
+
+  .threshold-slider {
+    width: 200px;
+    margin: 0.5rem;
+  }
+
+  canvas {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .selection-canvas {
+    position: absolute;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>AI Image Generator</h1>
+    <div class="input-group">
+      <input type="text" id="promptInput" placeholder="Enter your image prompt here...">
+      <button onclick="generateImage()">Generate</button>
+      <input type="file" id="imageUpload" accept="image/*" onchange="handleImageUpload(event)" style="display:none">
+      <button onclick="document.getElementById('imageUpload').click()">Upload Image</button>
+    </div>
+    <div class="magic-controls">
+      <button id="magicWandBtn">Magic Wand</button>
+      <input type="range" id="thresholdSlider" class="threshold-slider" min="0" max="100" value="30">
+      <span id="thresholdValue">30</span>
+    </div>
+    <div class="image-container" id="imageContainer">
+      <div id="loadingSpinner" class="loading" style="display: none;"></div>
+      <div id="placeholderText" class="placeholder-text">Enter a prompt to generate an image</div>
+      <canvas id="imageCanvas" style="display: none;"></canvas>
+      <canvas id="selectionCanvas" class="selection-canvas" style="display: none;"></canvas>
+    </div>
+  </div>
+
+  <script>
+    let imageCounter = 0;
+    let currentImage = null;
+    let isSelecting = false;
+    let ctx, selectionCtx;
+    const canvas = document.getElementById('imageCanvas');
+    const selectionCanvas = document.getElementById('selectionCanvas');
+    ctx = canvas.getContext('2d');
+    selectionCtx = selectionCanvas.getContext('2d');
+
+    function generateImage() {
+      const promptInput = document.getElementById('promptInput');
+      const imageContainer = document.getElementById('imageContainer');
+      const loadingSpinner = document.getElementById('loadingSpinner');
+      const placeholderText = document.getElementById('placeholderText');
+
+      if (!promptInput.value.trim()) {
+        alert('Please enter a prompt!');
+        return;
+      }
+
+      loadingSpinner.style.display = 'block';
+      placeholderText.style.display = 'none';
+      canvas.style.display = 'none';
+      selectionCanvas.style.display = 'none';
+
+      const generatedImage = document.createElement('img');
+      generatedImage.id = `generatedImage_${imageCounter++}`;
+      generatedImage.crossOrigin = 'anonymous';
+      generatedImage.src = promptInput.value;
+      generatedImage.alt = promptInput.value;
+
+      generatedImage.onload = function() {
+        loadingSpinner.style.display = 'none';
+        canvas.width = generatedImage.width;
+        canvas.height = generatedImage.height;
+        selectionCanvas.width = generatedImage.width;
+        selectionCanvas.height = generatedImage.height;
+        
+        ctx.drawImage(generatedImage, 0, 0);
+        canvas.style.display = 'block';
+        selectionCanvas.style.display = 'block';
+        currentImage = generatedImage;
+      };
+
+      generatedImage.onerror = function() {
+        loadingSpinner.style.display = 'none';
+        placeholderText.textContent = 'Error loading image';
+        placeholderText.style.display = 'block';
+      };
+    }
+
+    function handleImageUpload(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = function() {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            selectionCanvas.width = img.width;
+            selectionCanvas.height = img.height;
+            
+            ctx.drawImage(img, 0, 0);
+            canvas.style.display = 'block';
+            selectionCanvas.style.display = 'block';
+            document.getElementById('placeholderText').style.display = 'none';
+            currentImage = img;
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function getPixel(imageData, x, y) {
+      const index = (y * imageData.width + x) * 4;
+      return {
+        r: imageData.data[index],
+        g: imageData.data[index + 1],
+        b: imageData.data[index + 2],
+        a: imageData.data[index + 3]
+      };
+    }
+
+    function colorMatch(color1, color2, threshold) {
+      const diffR = Math.abs(color1.r - color2.r);
+      const diffG = Math.abs(color1.g - color2.g);
+      const diffB = Math.abs(color1.b - color2.b);
+      return (diffR + diffG + diffB) / 3 <= threshold;
+    }
+
+    function floodFill(imageData, startX, startY, threshold) {
+      const width = imageData.width;
+      const height = imageData.height;
+      const pixels = new Uint8ClampedArray(imageData.data);
+      const targetColor = getPixel(imageData, startX, startY);
+      const stack = [[startX, startY]];
+      const visited = new Set();
+
+      while (stack.length > 0) {
+        const [x, y] = stack.pop();
+        const key = `${x},${y}`;
+        
+        if (visited.has(key)) continue;
+        visited.add(key);
+
+        const currentColor = getPixel(imageData, x, y);
+        if (!colorMatch(targetColor, currentColor, threshold)) continue;
+
+        const index = (y * width + x) * 4;
+        pixels[index + 3] = 255;
+
+        // Check neighboring pixels
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const newX = x + dx;
+          const newY = y + dy;
+          if (newX >= 0 && newX < width && newY >= 0 && newY < height) {
+            stack.push([newX, newY]);
+          }
+        }
+      }
+
+      return new ImageData(pixels, width, height);
+    }
+
+    canvas.addEventListener('click', function(e) {
+      if (!isSelecting) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+      
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const threshold = parseInt(document.getElementById('thresholdSlider').value);
+      const selectionData = floodFill(imageData, Math.floor(x), Math.floor(y), threshold);
+      
+      selectionCtx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+      selectionCtx.putImageData(selectionData, 0, 0);
+    });
+
+    document.getElementById('magicWandBtn').addEventListener('click', function() {
+      isSelecting = !isSelecting;
+      this.style.background = isSelecting ? '#ff4444' : '#4CAF50';
+    });
+
+    document.getElementById('thresholdSlider').addEventListener('input', function() {
+      document.getElementById('thresholdValue').textContent = this.value;
+    });
+
+    document.getElementById('promptInput').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        generateImage();
+      }
+    });
+  </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body></html>
