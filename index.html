@@ -113,6 +113,28 @@
     position: absolute;
     pointer-events: none;
   }
+
+  .editor-controls {
+    margin-top: 1rem;
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .tool-button {
+    padding: 0.5rem 1rem;
+    background: #2196F3;
+    border: none;
+    border-radius: 3px;
+    color: white;
+    cursor: pointer;
+  }
+
+  .tool-button.active {
+    background: #1976D2;
+    box-shadow: 0 0 5px rgba(255,255,255,0.3);
+  }
 </style>
 </head>
 <body>
@@ -128,6 +150,8 @@
       <button id="magicWandBtn">Magic Wand</button>
       <input type="range" id="thresholdSlider" class="threshold-slider" min="0" max="100" value="30">
       <span id="thresholdValue">30</span>
+      <button id="setTransparentBtn">Set Transparent</button>
+      <button id="fillSelectionBtn">Fill Selection</button>
     </div>
     <div class="image-container" id="imageContainer">
       <div id="loadingSpinner" class="loading" style="display: none;"></div>
@@ -142,6 +166,7 @@
     let currentImage = null;
     let isSelecting = false;
     let ctx, selectionCtx;
+    let currentSelection = null;
     const canvas = document.getElementById('imageCanvas');
     const selectionCanvas = document.getElementById('selectionCanvas');
     ctx = canvas.getContext('2d');
@@ -149,7 +174,6 @@
 
     function generateImage() {
       const promptInput = document.getElementById('promptInput');
-      const imageContainer = document.getElementById('imageContainer');
       const loadingSpinner = document.getElementById('loadingSpinner');
       const placeholderText = document.getElementById('placeholderText');
 
@@ -163,30 +187,31 @@
       canvas.style.display = 'none';
       selectionCanvas.style.display = 'none';
 
-      const generatedImage = document.createElement('img');
-      generatedImage.id = `generatedImage_${imageCounter++}`;
-      generatedImage.crossOrigin = 'anonymous';
-      generatedImage.src = promptInput.value;
-      generatedImage.alt = promptInput.value;
-
-      generatedImage.onload = function() {
+      // Create a new image and set up loading handlers
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      
+      img.onload = function() {
         loadingSpinner.style.display = 'none';
-        canvas.width = generatedImage.width;
-        canvas.height = generatedImage.height;
-        selectionCanvas.width = generatedImage.width;
-        selectionCanvas.height = generatedImage.height;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        selectionCanvas.width = img.width;
+        selectionCanvas.height = img.height;
         
-        ctx.drawImage(generatedImage, 0, 0);
+        ctx.drawImage(img, 0, 0);
         canvas.style.display = 'block';
         selectionCanvas.style.display = 'block';
-        currentImage = generatedImage;
+        currentImage = img;
       };
 
-      generatedImage.onerror = function() {
+      img.onerror = function() {
         loadingSpinner.style.display = 'none';
         placeholderText.textContent = 'Error loading image';
         placeholderText.style.display = 'block';
       };
+
+      // Set image source with CORS proxy
+      img.src = `https://cors-anywhere.herokuapp.com/${promptInput.value}`;
     }
 
     function handleImageUpload(event) {
@@ -234,7 +259,7 @@
     function floodFill(imageData, startX, startY, threshold) {
       const width = imageData.width;
       const height = imageData.height;
-      const pixels = new Uint8ClampedArray(imageData.data);
+      const selectionMask = new Uint8ClampedArray(width * height);
       const targetColor = getPixel(imageData, startX, startY);
       const stack = [[startX, startY]];
       const visited = new Set();
@@ -249,8 +274,7 @@
         const currentColor = getPixel(imageData, x, y);
         if (!colorMatch(targetColor, currentColor, threshold)) continue;
 
-        const index = (y * width + x) * 4;
-        pixels[index + 3] = 255;
+        selectionMask[y * width + x] = 1;
 
         // Check neighboring pixels
         for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
@@ -262,7 +286,7 @@
         }
       }
 
-      return new ImageData(pixels, width, height);
+      return selectionMask;
     }
 
     canvas.addEventListener('click', function(e) {
@@ -274,10 +298,60 @@
       
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const threshold = parseInt(document.getElementById('thresholdSlider').value);
-      const selectionData = floodFill(imageData, Math.floor(x), Math.floor(y), threshold);
+      currentSelection = floodFill(imageData, Math.floor(x), Math.floor(y), threshold);
       
+      // Draw selection outline
       selectionCtx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
-      selectionCtx.putImageData(selectionData, 0, 0);
+      selectionCtx.strokeStyle = 'white';
+      selectionCtx.lineWidth = 1;
+      
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          if (currentSelection[y * canvas.width + x]) {
+            const hasUnselectedNeighbor = 
+              !currentSelection[y * canvas.width + (x-1)] ||
+              !currentSelection[y * canvas.width + (x+1)] ||
+              !currentSelection[(y-1) * canvas.width + x] ||
+              !currentSelection[(y+1) * canvas.width + x];
+              
+            if (hasUnselectedNeighbor) {
+              selectionCtx.beginPath();
+              selectionCtx.rect(x, y, 1, 1);
+              selectionCtx.stroke();
+            }
+          }
+        }
+      }
+    });
+
+    document.getElementById('setTransparentBtn').addEventListener('click', function() {
+      if (!currentSelection) return;
+      
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < currentSelection.length; i++) {
+        if (currentSelection[i]) {
+          imageData.data[i * 4 + 3] = 0;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+    });
+
+    document.getElementById('fillSelectionBtn').addEventListener('click', function() {
+      if (!currentSelection) return;
+      
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const color = { r: 255, g: 0, b: 0, a: 255 }; // Example: red color
+      
+      for (let i = 0; i < currentSelection.length; i++) {
+        if (currentSelection[i]) {
+          const index = i * 4;
+          imageData.data[index] = color.r;
+          imageData.data[index + 1] = color.g;
+          imageData.data[index + 2] = color.b;
+          imageData.data[index + 3] = color.a;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
     });
 
     document.getElementById('magicWandBtn').addEventListener('click', function() {
